@@ -9,7 +9,6 @@ using UnityEngine;
 namespace JustSleep
 {
     [BepInPlugin(pluginID, pluginName, pluginVersion)]
-    //[BepInIncompatibility("net.kinghfb.valheim.sleepover")]
     public class JustSleep : BaseUnityPlugin
     {
         private const string pluginID = "shudnal.JustSleep";
