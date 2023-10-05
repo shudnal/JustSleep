@@ -51,7 +51,7 @@ namespace JustSleep
                 if (!__instance.IsMine() || !__instance.IsCurrent())
                 {
                     string textJustSleep = "";
-                    if (!ZInput.IsAlternative1Functionality() || !ZInput.IsGamepadActive())
+                    if (!ZInput.IsNonClassicFunctionality() || !ZInput.IsGamepadActive())
                         {
                         textJustSleep = "\n[<color=yellow><b>$KEY_AltPlace + $KEY_Use</b></color>] $piece_bed_sleep";
                     }
