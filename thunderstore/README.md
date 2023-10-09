@@ -16,8 +16,6 @@ extract JustSleep.dll to your BepInEx\Plugins\ folder.
 
 [Nexus](https://www.nexusmods.com/valheim/mods/2561)
 
-[Thunderstore](https://valheim.thunderstore.io/package/shudnal/JustSleep/)
-
 ## Changelog
 
 v 1.0.0

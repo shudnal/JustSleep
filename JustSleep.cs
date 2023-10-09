@@ -27,7 +27,6 @@ namespace JustSleep
             modEnabled = Config.Bind<bool>("General", "Enabled", true, "Enable this mod");
 
             _harmony = Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly(), pluginID);
-
         }
 
         private void OnDestroy() => _harmony?.UnpatchSelf();
