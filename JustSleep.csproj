@@ -71,6 +71,8 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PostBuildEvent>xcopy "$(TargetDir)\$(TargetFileName)" "F:\Steam\steamapps\common\Valheim\BepInEx\plugins\" /q /y /i</PostBuildEvent>
+    <PostBuildEvent>xcopy "$(TargetDir)\$(TargetFileName)" "$(ProjectDir)package\thunderstore\$(SolutionName)\" /q /y /i
+
+if $(ConfigurationName) == Debug (powershell Compress-Archive -Path '$(ProjectDir)\package\thunderstore\$(SolutionName)\*' -DestinationPath '$(ProjectDir)\package\thunderstore\$(SolutionName).zip' -Force)</PostBuildEvent>
   </PropertyGroup>
 </Project>

@@ -15,8 +15,3 @@ extract JustSleep.dll to your BepInEx\Plugins\ folder.
 ## Mirrors
 
 [Nexus](https://www.nexusmods.com/valheim/mods/2561)
-
-## Changelog
-
-v 1.0.0
-* Initial release

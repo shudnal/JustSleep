@@ -363,3 +363,5 @@ MigrationBackup/
 FodyWeavers.xsd
 /thunderstore/JustSleep.zip
 /thunderstore/JustSleep.dll
+/package/thunderstore/JustSleep/JustSleep.dll
+/package/thunderstore/JustSleep.zip
