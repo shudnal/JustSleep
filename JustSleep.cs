@@ -9,7 +9,7 @@ namespace JustSleep
     {
         private const string pluginID = "shudnal.JustSleep";
         private const string pluginName = "JustSleep";
-        private const string pluginVersion = "1.0.1";
+        private const string pluginVersion = "1.0.2";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -64,7 +64,7 @@ namespace JustSleep
             [HarmonyPatch(nameof(Bed.GetOwner))]
             public static void GetOwner(Bed __instance, ref long __result)
             {
-                if (__instance == alternativeInteractingBed && __result == 0L)
+                if (__instance == alternativeInteractingBed)
                     __result = Game.instance.GetPlayerProfile().GetPlayerID();
             }
 
