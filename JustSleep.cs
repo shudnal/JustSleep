@@ -1,10 +1,7 @@
 ﻿using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
-using System.Collections;
-using System.Collections.Generic;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace JustSleep
@@ -21,7 +18,6 @@ namespace JustSleep
         private static JustSleep instance;
 
         private static ConfigEntry<bool> modEnabled;
-        private static ConfigEntry<bool> loggingEnabled;
 
         private static ConfigEntry<bool> sleepingInNotOwnedBed;
 
@@ -64,7 +60,6 @@ namespace JustSleep
             Config.Bind("General", "NexusID", 2561, "Nexus mod ID for updates");
 
             modEnabled = Config.Bind("General", "Enabled", defaultValue: true, "Enable the mod.");
-            loggingEnabled = Config.Bind("General", "Logging enabled", defaultValue: false, "Enable logging.");
 
             sleepingInNotOwnedBed = Config.Bind("Sleeping in not owned beds", "Enabled", defaultValue: true, "Enable sleeping in not owned beds.");
             
@@ -72,21 +67,20 @@ namespace JustSleep
             sleepingWhileRestingSeconds = Config.Bind("Sleeping while resting", "Seconds to stay resting", defaultValue: 20, "How many seconds should pass while resting for sleep in front of fireplace to be available");
         }
 
-        private static void LogInfo(object data)
-        {
-            if (loggingEnabled.Value)
-                instance.Logger.LogInfo(data);
-        }
-
         private static bool IsSleepingWhileRestingAvailable()
         {
-            return modEnabled.Value && sleepingWhileResting.Value && restingTimer >= sleepingWhileRestingSeconds.Value && EnvMan.instance.CanSleep() && Player.m_localPlayer != null && (Player.m_localPlayer.IsSitting() || Player.m_localPlayer.IsAttached());
+            return modEnabled.Value && sleepingWhileResting.Value && restingTimer >= sleepingWhileRestingSeconds.Value && Player.m_localPlayer != null && (Player.m_localPlayer.IsSitting() || Player.m_localPlayer.IsAttached());
         }
 
         private static void SetSleepingWhileResting(bool sleeping)
         {
             isSittingSleeping = sleeping;
             Player.m_localPlayer.m_nview.GetZDO().Set(ZDOVars.s_inBed, isSittingSleeping);
+
+            if (isSittingSleeping)
+                Chat.instance.SetNpcText(Player.m_localPlayer.gameObject, Vector2.up, 20, 600, "", "$se_resting_start", false);
+            else
+                Chat.instance.ClearNpcText(Player.m_localPlayer.gameObject);
         }
 
         [HarmonyPatch(typeof(Fireplace), nameof(Fireplace.GetHoverText))]
@@ -101,8 +95,15 @@ namespace JustSleep
                 if (Player.m_localPlayer.InBed())
                     return;
 
-                string altKey = !ZInput.IsNonClassicFunctionality() || !ZInput.IsGamepadActive() ? "$KEY_AltPlace" : "$KEY_JoyAltKeys";
-                __result += Localization.instance.Localize($"\n[<color=yellow><b>{altKey} + $KEY_Use</b></color>] $piece_bed_sleep");
+                if (EnvMan.instance.CanSleep())
+                {
+                    string altKey = !ZInput.IsNonClassicFunctionality() || !ZInput.IsGamepadActive() ? "$KEY_AltPlace" : "$KEY_JoyAltKeys";
+                    __result += Localization.instance.Localize($"\n[<color=yellow><b>{altKey} + $KEY_Use</b></color>] $piece_bed_sleep");
+                }
+                else
+                {
+                    __result += Localization.instance.Localize("\n$msg_cantsleep");
+                }
             }
         }
 
@@ -111,11 +112,10 @@ namespace JustSleep
         {
             private static bool Prefix(Humanoid user, bool hold, bool alt)
             {
-                if (!alt || hold || !IsSleepingWhileRestingAvailable() || user != Player.m_localPlayer)
+                if (!alt || hold || !IsSleepingWhileRestingAvailable() || user != Player.m_localPlayer || !EnvMan.instance.CanSleep())
                     return true;
 
                 SetSleepingWhileResting(sleeping:true);
-                //Chat.instance.SetNpcText() $se_resting_start <sprite="ps5" name="button_cross">
                 return false;
             }
         }
@@ -143,8 +143,6 @@ namespace JustSleep
                 }
             }
         }
-
-        //CharacterAnimEvent
 
         [HarmonyPatch(typeof(Bed))]
         public static class BedPatches
