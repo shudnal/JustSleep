@@ -1,6 +1,6 @@
 {
   "name": "JustSleep",
-  "version_number": "1.0.3",
+  "version_number": "1.0.4",
   "website_url": "https://github.com/shudnal/JustSleep",
   "description": "Sleep in not owned beds. Sleep in front of the fire.",
   "dependencies": ["denikson-BepInExPack_Valheim-5.4.2202"]

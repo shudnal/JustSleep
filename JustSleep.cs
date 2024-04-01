@@ -11,7 +11,7 @@ namespace JustSleep
     {
         private const string pluginID = "shudnal.JustSleep";
         private const string pluginName = "JustSleep";
-        private const string pluginVersion = "1.0.3";
+        private const string pluginVersion = "1.0.4";
 
         private Harmony harmony;
 
@@ -47,6 +47,9 @@ namespace JustSleep
                 restingTimer += Time.fixedDeltaTime;
             else
                 restingTimer = 0;
+
+            if (isSittingSleeping && !Game.instance.m_sleeping && !CanSleep())
+                SetSleepingWhileResting(sleeping: false);
         }
 
         private void OnDestroy()
@@ -65,6 +68,11 @@ namespace JustSleep
             
             sleepingWhileResting = Config.Bind("Sleeping while resting", "Enabled", defaultValue: true, "Enable option to sleep while Resting.");
             sleepingWhileRestingSeconds = Config.Bind("Sleeping while resting", "Seconds to stay resting", defaultValue: 20, "How many seconds should pass while resting for sleep in front of fireplace to be available");
+        }
+
+        private static bool CanSleep()
+        {
+            return Player.m_localPlayer != null && IsSleepingWhileRestingAvailable() && EnvMan.instance.CanSleep() && !Player.m_localPlayer.GetSEMan().HaveStatusEffect(Player.s_statusEffectWet) && !Player.m_localPlayer.IsSensed();
         }
 
         private static bool IsSleepingWhileRestingAvailable()
@@ -95,14 +103,22 @@ namespace JustSleep
                 if (Player.m_localPlayer.InBed())
                     return;
 
-                if (EnvMan.instance.CanSleep())
+                if (!EnvMan.instance.CanSleep())
                 {
-                    string altKey = !ZInput.IsNonClassicFunctionality() || !ZInput.IsGamepadActive() ? "$KEY_AltPlace" : "$KEY_JoyAltKeys";
-                    __result += Localization.instance.Localize($"\n[<color=yellow><b>{altKey} + $KEY_Use</b></color>] $piece_bed_sleep");
+                    __result += Localization.instance.Localize("\n$msg_cantsleep");
+                }
+                else if (Player.m_localPlayer.GetSEMan().HaveStatusEffect(Player.s_statusEffectWet))
+                {
+                    __result += Localization.instance.Localize("\n$msg_bedwet");
+                }
+                else if (Player.m_localPlayer.IsSensed())
+                {
+                    __result += Localization.instance.Localize("\n$msg_bedenemiesnearby");
                 }
                 else
                 {
-                    __result += Localization.instance.Localize("\n$msg_cantsleep");
+                    string altKey = !ZInput.IsNonClassicFunctionality() || !ZInput.IsGamepadActive() ? "$KEY_AltPlace" : "$KEY_JoyAltKeys";
+                    __result += Localization.instance.Localize($"\n[<color=yellow><b>{altKey} + $KEY_Use</b></color>] $piece_bed_sleep");
                 }
             }
         }
@@ -112,7 +128,7 @@ namespace JustSleep
         {
             private static bool Prefix(Humanoid user, bool hold, bool alt)
             {
-                if (!alt || hold || !IsSleepingWhileRestingAvailable() || user != Player.m_localPlayer || !EnvMan.instance.CanSleep())
+                if (!alt || hold || user != Player.m_localPlayer || !CanSleep())
                     return true;
 
                 SetSleepingWhileResting(sleeping:true);

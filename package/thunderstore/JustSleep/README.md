@@ -6,7 +6,11 @@ Allows you to sleep in unclaimed, not owned or your own bed without spawn point 
 
 Allows you to sleep in front of the fire.
 
-After you have "Resting" buff for set configurable amount of time (default 20 seconds like for Rested buff) you can interact with fireplace to get to sleep. You should be sitting on the floor or furniture.
+After you have "Resting" buff for set configurable amount of time (default 20 seconds like for Rested buff) you can interact with fireplace to get to sleep
+* you should be sitting on the floor or furniture
+* you should not be sensed by monsters
+* you should not be wet
+* it should not be a daytime
 
 Uses current ingame hotkey for alternative action. 
 

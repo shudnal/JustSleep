@@ -1,5 +1,9 @@
+# 1.0.4
+* more strict check for sleep in front of the fire
+* sleeping in front of the fire will be stopped if sleep requirements are not met (you are sensed by monsters or you are wet or it's daytime)
+
 # 1.0.3
-* sleep in from of the fire
+* sleep in front of the fire
 
 # 1.0.2
 * fix for sleep in bed owned by another person
