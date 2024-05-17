@@ -11,7 +11,7 @@ namespace JustSleep
     {
         private const string pluginID = "shudnal.JustSleep";
         private const string pluginName = "JustSleep";
-        private const string pluginVersion = "1.0.4";
+        private const string pluginVersion = "1.0.5";
 
         private Harmony harmony;
 
@@ -40,10 +40,10 @@ namespace JustSleep
 
         private void FixedUpdate()
         {
-            if (Player.m_localPlayer == null)
+            if (Player.m_localPlayer == null || Player.m_localPlayer.GetSEMan() == null)
                 return;
 
-            if (Player.m_localPlayer.GetSEMan().HaveStatusEffect(Player.s_statusEffectResting))
+            if (Player.m_localPlayer.GetSEMan().HaveStatusEffect(SEMan.s_statusEffectResting))
                 restingTimer += Time.fixedDeltaTime;
             else
                 restingTimer = 0;
@@ -72,7 +72,7 @@ namespace JustSleep
 
         private static bool CanSleep()
         {
-            return Player.m_localPlayer != null && IsSleepingWhileRestingAvailable() && EnvMan.instance.CanSleep() && !Player.m_localPlayer.GetSEMan().HaveStatusEffect(Player.s_statusEffectWet) && !Player.m_localPlayer.IsSensed();
+            return Player.m_localPlayer != null && IsSleepingWhileRestingAvailable() && EnvMan.CanSleep() && !Player.m_localPlayer.GetSEMan().HaveStatusEffect(SEMan.s_statusEffectWet) && !Player.m_localPlayer.IsSensed();
         }
 
         private static bool IsSleepingWhileRestingAvailable()
@@ -103,11 +103,11 @@ namespace JustSleep
                 if (Player.m_localPlayer.InBed())
                     return;
 
-                if (!EnvMan.instance.CanSleep())
+                if (!EnvMan.CanSleep())
                 {
                     __result += Localization.instance.Localize("\n$msg_cantsleep");
                 }
-                else if (Player.m_localPlayer.GetSEMan().HaveStatusEffect(Player.s_statusEffectWet))
+                else if (Player.m_localPlayer.GetSEMan().HaveStatusEffect(SEMan.s_statusEffectWet))
                 {
                     __result += Localization.instance.Localize("\n$msg_bedwet");
                 }
