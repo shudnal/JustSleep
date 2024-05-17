@@ -1,13 +1,20 @@
 # JustSleep
-Valheim mod for sleeping in not owned beds.
+Sleep in not owned beds. Sleep in front of the fire.
 
 ## Features
 Allows you to sleep in unclaimed, not owned or your own bed without spawn point setting.
 
-Uses current ingame hotkey for alternative action. 
-Currently it's Left shift. Doesn't mess with usual bed behavior. Doesn't show hotkey hint if you can sleep as usual.
+Allows you to sleep in front of the fire.
 
-It should not mess with other mods
+After you have "Resting" buff for set configurable amount of time (default 20 seconds like for Rested buff) you can interact with fireplace to get to sleep
+* you should be sitting on the floor or furniture
+* you should not be sensed by monsters
+* you should not be wet
+* it should not be a daytime
+
+Uses current ingame hotkey for alternative action. 
+
+For PC it's Left shift. Doesn't mess with bed or fireplace behavior. Doesn't show hotkey hint if you can sleep as usual.
 
 ## Installation (manual)
 extract JustSleep.dll to your BepInEx\Plugins\ folder.
