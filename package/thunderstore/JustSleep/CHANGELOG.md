@@ -1,3 +1,7 @@
+# 1.0.6
+* visual and text indicator for resting progress (sleep preparation)
+* screen will blacken when you're sleeping
+
 # 1.0.5
 * Ashlands
 

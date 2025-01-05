@@ -9,9 +9,9 @@ namespace JustSleep
     [BepInPlugin(pluginID, pluginName, pluginVersion)]
     public class JustSleep : BaseUnityPlugin
     {
-        private const string pluginID = "shudnal.JustSleep";
-        private const string pluginName = "JustSleep";
-        private const string pluginVersion = "1.0.5";
+        public const string pluginID = "shudnal.JustSleep";
+        public const string pluginName = "JustSleep";
+        public const string pluginVersion = "1.0.6";
 
         private Harmony harmony;
 
@@ -26,6 +26,8 @@ namespace JustSleep
 
         private static float restingTimer = 0f;
         private static bool isSittingSleeping;
+
+        public static CanvasGroup screenBlackener;
 
         private void Awake()
         {
@@ -70,15 +72,11 @@ namespace JustSleep
             sleepingWhileRestingSeconds = Config.Bind("Sleeping while resting", "Seconds to stay resting", defaultValue: 20, "How many seconds should pass while resting for sleep in front of fireplace to be available");
         }
 
-        private static bool CanSleep()
-        {
-            return Player.m_localPlayer != null && IsSleepingWhileRestingAvailable() && EnvMan.CanSleep() && !Player.m_localPlayer.GetSEMan().HaveStatusEffect(SEMan.s_statusEffectWet) && !Player.m_localPlayer.IsSensed();
-        }
+        private static bool CanSleep() => IsSleepingWhileRestingAvailable() && EnvMan.CanSleep() && !Player.m_localPlayer.GetSEMan().HaveStatusEffect(SEMan.s_statusEffectWet) && !Player.m_localPlayer.IsSensed();
 
-        private static bool IsSleepingWhileRestingAvailable()
-        {
-            return modEnabled.Value && sleepingWhileResting.Value && restingTimer >= sleepingWhileRestingSeconds.Value && Player.m_localPlayer != null && (Player.m_localPlayer.IsSitting() || Player.m_localPlayer.IsAttached());
-        }
+        private static bool IsSleepingWhileRestingAvailable() => sleepingWhileResting.Value && restingTimer >= sleepingWhileRestingSeconds.Value && PlayerInSleepPosition();
+
+        private static bool PlayerInSleepPosition() => modEnabled.Value && Player.m_localPlayer != null && (Player.m_localPlayer.IsSitting() || Player.m_localPlayer.IsAttached());
 
         private static void SetSleepingWhileResting(bool sleeping)
         {
@@ -91,6 +89,8 @@ namespace JustSleep
                 Chat.instance.ClearNpcText(Player.m_localPlayer.gameObject);
         }
 
+        private static string FromPercent(double percent) => "<sup><alpha=#ff>▀▀▀▀▀▀▀▀▀▀<alpha=#ff></sup>".Insert(Mathf.Clamp(Mathf.RoundToInt((float)percent * 10), 0, 10) + 16, "<alpha=#33>");
+
         [HarmonyPatch(typeof(Fireplace), nameof(Fireplace.GetHoverText))]
         private class Fireplace_GetHoverText_HoverTextWithSleepAction
         {
@@ -98,7 +98,11 @@ namespace JustSleep
             private static void Postfix(ref string __result)
             {
                 if (!IsSleepingWhileRestingAvailable())
+                {
+                    if (PlayerInSleepPosition() && restingTimer > 0)
+                        __result += $"\n{Localization.instance.Localize("$se_resting_start")}\n{FromPercent(restingTimer / sleepingWhileRestingSeconds.Value)}";
                     return;
+                }
 
                 if (Player.m_localPlayer.InBed())
                     return;
@@ -212,6 +216,58 @@ namespace JustSleep
             public static void IsCurrent(Bed __instance, ref bool __result)
             {
                 __result = __result || __instance == alternativeInteractingBed;
+            }
+        }
+
+        [HarmonyPatch(typeof(Hud), nameof(Hud.Awake))]
+        public static class Hud_Awake_BlackPanelInit
+        {
+            private static void Postfix(Hud __instance)
+            {
+                GameObject blocker = UnityEngine.Object.Instantiate(__instance.m_loadingScreen.gameObject, __instance.m_loadingScreen.transform.parent);
+                blocker.name = "JustSleep_SleepingBlack";
+                blocker.transform.SetSiblingIndex(0);
+
+                blocker.transform.Find("Loading/TopFade").SetParent(blocker.transform);
+                blocker.transform.Find("Loading/BottomFade").SetParent(blocker.transform);
+
+                for (int i = blocker.transform.childCount - 1; i >= 0; i--)
+                {
+                    Transform child = blocker.transform.GetChild(i);
+                    switch (child.name)
+                    {
+                        case "Loading":
+                        case "Sleeping":
+                        case "Teleporting":
+                        case "Image":
+                        case "Tip":
+                        case "panel_separator":
+                            UnityEngine.Object.Destroy(child.gameObject);
+                            break;
+                    }
+                }
+
+                screenBlackener = blocker.GetComponent<CanvasGroup>();
+                screenBlackener.gameObject.SetActive(false);
+            }
+        }
+
+        [HarmonyPatch(typeof(Hud), nameof(Hud.UpdateBlackScreen))]
+        public static class Hud_UpdateBlackScreen_SleepingScreenEffect
+        {
+            private static void Postfix(float dt)
+            {
+                if (isSittingSleeping)
+                {
+                    screenBlackener.gameObject.SetActive(value: true);
+                    screenBlackener.alpha = Mathf.MoveTowards(screenBlackener.alpha, 0.95f, dt);
+                }
+                else
+                {
+                    screenBlackener.alpha = Mathf.MoveTowards(screenBlackener.alpha, 0f, dt / 2f);
+                    if (screenBlackener.alpha <= 0f)
+                        screenBlackener.gameObject.SetActive(value: false);
+                }
             }
         }
     }
