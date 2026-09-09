@@ -1,7 +1,10 @@
 {
   "name": "JustSleep",
-  "version_number": "1.0.6",
+  "version_number": "1.0.7",
   "website_url": "https://github.com/shudnal/JustSleep",
   "description": "Sleep in not owned beds. Sleep in front of the fire.",
-  "dependencies": ["denikson-BepInExPack_Valheim-5.4.2202"]
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2350",
+    "shudnal-ConditionalConfigSync-1.0.5"
+  ]
 }

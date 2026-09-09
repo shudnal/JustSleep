@@ -19,8 +19,15 @@ For PC it's Left shift. Doesn't mess with bed or fireplace behavior. Doesn't sho
 ## Installation (manual)
 extract JustSleep.dll to your BepInEx\Plugins\ folder.
 
-## Mirrors
+## Dependencies
 
-[Nexus](https://www.nexusmods.com/valheim/mods/2561)
+- [BepInExPack Valheim 5.4.2350](https://thunderstore.io/c/valheim/p/denikson/BepInExPack_Valheim/)
+- [ConditionalConfigSync 1.0.5](https://thunderstore.io/c/valheim/p/shudnal/ConditionalConfigSync/)
 
-[Thunderstore](https://valheim.thunderstore.io/package/shudnal/JustSleep/)
+Install ConditionalConfigSync as a separate dependency; do not copy its DLLs into this mod's package.
+
+## Donation
+[Buy Me a Coffee](https://buymeacoffee.com/shudnal)
+
+## Discord
+[Join server](https://discord.gg/e3UtQB8GFK)

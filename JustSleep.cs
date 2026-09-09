@@ -1,4 +1,5 @@
 ﻿using BepInEx;
+using ConditionalConfigSync;
 using BepInEx.Configuration;
 using HarmonyLib;
 using System.Reflection;
@@ -7,11 +8,20 @@ using UnityEngine;
 namespace JustSleep
 {
     [BepInPlugin(pluginID, pluginName, pluginVersion)]
+    [BepInDependency("_shudnal.ConditionalConfigSync", "1.0.5")]
     public class JustSleep : BaseUnityPlugin
     {
         public const string pluginID = "shudnal.JustSleep";
         public const string pluginName = "JustSleep";
-        public const string pluginVersion = "1.0.6";
+        public const string pluginVersion = "1.0.7";
+
+        internal static readonly ConfigSync configSync = new ConfigSync(pluginID)
+        {
+            DisplayName = pluginName,
+            CurrentVersion = pluginVersion,
+            MinimumRequiredVersion = pluginVersion,
+            ModRequired = false
+        };
 
         private Harmony harmony;
 
@@ -60,16 +70,21 @@ namespace JustSleep
             harmony?.UnpatchSelf();
         }
 
+        private ConfigEntry<T> BindLocalConfig<T>(string group, string name, T defaultValue, string description)
+        {
+            return configSync.AddConfigEntry(Config, group, name, defaultValue, new ConfigDescription(description),
+                ConfigSyncMode.AlwaysClientControlled).SourceConfig;
+        }
+
         private void ConfigInit()
         {
-            Config.Bind("General", "NexusID", 2561, "Nexus mod ID for updates");
 
-            modEnabled = Config.Bind("General", "Enabled", defaultValue: true, "Enable the mod.");
+            modEnabled = BindLocalConfig("General", "Enabled", defaultValue: true, "Enable the mod.");
 
-            sleepingInNotOwnedBed = Config.Bind("Sleeping in not owned beds", "Enabled", defaultValue: true, "Enable sleeping in not owned beds.");
+            sleepingInNotOwnedBed = BindLocalConfig("Sleeping in not owned beds", "Enabled", defaultValue: true, "Enable sleeping in not owned beds.");
             
-            sleepingWhileResting = Config.Bind("Sleeping while resting", "Enabled", defaultValue: true, "Enable option to sleep while Resting.");
-            sleepingWhileRestingSeconds = Config.Bind("Sleeping while resting", "Seconds to stay resting", defaultValue: 20, "How many seconds should pass while resting for sleep in front of fireplace to be available");
+            sleepingWhileResting = BindLocalConfig("Sleeping while resting", "Enabled", defaultValue: true, "Enable option to sleep while Resting.");
+            sleepingWhileRestingSeconds = BindLocalConfig("Sleeping while resting", "Seconds to stay resting", defaultValue: 20, "How many seconds should pass while resting for sleep in front of fireplace to be available");
         }
 
         private static bool CanSleep() => IsSleepingWhileRestingAvailable() && EnvMan.CanSleep() && !Player.m_localPlayer.GetSEMan().HaveStatusEffect(SEMan.s_statusEffectWet) && !Player.m_localPlayer.IsSensed();
@@ -196,9 +211,9 @@ namespace JustSleep
                 alternativeInteractingBed = modEnabled.Value && sleepingInNotOwnedBed.Value && alt ? __instance : null;
             }
 
-            [HarmonyPostfix]
+            [HarmonyFinalizer]
             [HarmonyPatch(nameof(Bed.Interact))]
-            public static void InteractPostfix()
+            public static void InteractFinalizer()
             {
                 alternativeInteractingBed = null;
             }
@@ -224,12 +239,15 @@ namespace JustSleep
         {
             private static void Postfix(Hud __instance)
             {
+                if (__instance.m_loadingScreen == null)
+                    return;
+
                 GameObject blocker = UnityEngine.Object.Instantiate(__instance.m_loadingScreen.gameObject, __instance.m_loadingScreen.transform.parent);
                 blocker.name = "JustSleep_SleepingBlack";
                 blocker.transform.SetSiblingIndex(0);
 
-                blocker.transform.Find("Loading/TopFade").SetParent(blocker.transform);
-                blocker.transform.Find("Loading/BottomFade").SetParent(blocker.transform);
+                blocker.transform.Find("Loading/TopFade")?.SetParent(blocker.transform);
+                blocker.transform.Find("Loading/BottomFade")?.SetParent(blocker.transform);
 
                 for (int i = blocker.transform.childCount - 1; i >= 0; i--)
                 {
@@ -247,7 +265,9 @@ namespace JustSleep
                     }
                 }
 
-                screenBlackener = blocker.GetComponent<CanvasGroup>();
+                screenBlackener = blocker.GetComponent<CanvasGroup>() ?? blocker.AddComponent<CanvasGroup>();
+                screenBlackener.interactable = false;
+                screenBlackener.blocksRaycasts = false;
                 screenBlackener.gameObject.SetActive(false);
             }
         }
@@ -257,6 +277,9 @@ namespace JustSleep
         {
             private static void Postfix(float dt)
             {
+                if (screenBlackener == null)
+                    return;
+
                 if (isSittingSleeping)
                 {
                     screenBlackener.gameObject.SetActive(value: true);

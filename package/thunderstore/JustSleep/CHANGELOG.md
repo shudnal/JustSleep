@@ -1,3 +1,9 @@
+# 1.0.7
+* Updated for the Valheim 1.0.7 release.
+* Migrated configuration registration and synchronization to the standalone ConditionalConfigSync dependency.
+* Updated required dependencies to BepInExPack Valheim 5.4.2350 and ConditionalConfigSync 1.0.5.
+* Fixed temporary bed interaction state leaking after exceptions and guarded missing loading-screen UI elements.
+
 # 1.0.6
 * visual and text indicator for resting progress (sleep preparation)
 * screen will blacken when you're sleeping
