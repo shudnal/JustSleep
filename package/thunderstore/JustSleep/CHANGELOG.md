@@ -1,3 +1,9 @@
+# 1.0.8
+* Added automatic sleep while sitting by a fire after continuously looking at the same burning fireplace for 20 seconds. Looking away resets the sleep preparation.
+* Added a subtle sleeping head/breathing animation
+* Added `Zzzzz...` overhead text for sleeping players when both clients have JustSleep installed. Vanilla players are compatible but there will be no text for them.
+* Refined screen fading and sleep-transition timing for smoother visual transitions.
+
 # 1.0.7
 * Updated for the Valheim 1.0.7 release.
 * Migrated configuration registration and synchronization to the standalone ConditionalConfigSync dependency.
