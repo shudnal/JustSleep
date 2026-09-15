@@ -1,3 +1,6 @@
+# 1.0.9
+* both hotkeys made configurable
+
 # 1.0.8
 * Added automatic sleep while sitting by a fire after continuously looking at the same burning fireplace for 20 seconds. Looking away resets the sleep preparation.
 * Added a subtle sleeping head/breathing animation

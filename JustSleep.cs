@@ -1,9 +1,11 @@
-﻿using BepInEx;
+using BepInEx;
 using ConditionalConfigSync;
 using BepInEx.Configuration;
 using HarmonyLib;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
+using System.Reflection.Emit;
 using UnityEngine;
 
 namespace JustSleep
@@ -14,7 +16,7 @@ namespace JustSleep
     {
         public const string pluginID = "shudnal.JustSleep";
         public const string pluginName = "JustSleep";
-        public const string pluginVersion = "1.0.8";
+        public const string pluginVersion = "1.0.9";
 
         internal static readonly ConfigSync configSync = new ConfigSync(pluginID)
         {
@@ -34,6 +36,22 @@ namespace JustSleep
 
         private static ConfigEntry<bool> sleepingWhileResting;
         private static ConfigEntry<int> sleepingWhileRestingSeconds;
+
+        private static ConfigEntry<bool> sleepHotkeyOverride;
+        private static ConfigEntry<KeyboardShortcut> sleepHotkey;
+        private static ConfigEntry<bool> claimHotkeyOverride;
+        private static ConfigEntry<KeyboardShortcut> claimHotkey;
+
+        private static bool sanitizingHotkeys;
+
+        private enum HotkeyAction
+        {
+            None,
+            Sleep,
+            Claim
+        }
+
+        private static HotkeyAction activeHotkeyAction;
 
         private const float automaticSleepFocusSeconds = 20f;
         private const float sleepLookRightSeconds = 3f;
@@ -136,15 +154,264 @@ namespace JustSleep
                 ConfigSyncMode.Conditional, serverControlledByDefault: true).SourceConfig;
         }
 
+        private ConfigEntry<T> BindClientConfig<T>(string group, string name, T defaultValue, string description)
+        {
+            return configSync.AddConfigEntry(Config, group, name, defaultValue, new ConfigDescription(description),
+                ConfigSyncMode.Conditional, serverControlledByDefault: false).SourceConfig;
+        }
+
         private void ConfigInit()
         {
-
             modEnabled = BindConfig("General", "Enabled", defaultValue: true, "Enable the mod.");
 
             sleepingInNotOwnedBed = BindConfig("Sleeping in not owned beds", "Enabled", defaultValue: true, "Enable sleeping in not owned beds.");
-            
+
             sleepingWhileResting = BindConfig("Sleeping while resting", "Enabled", defaultValue: true, "Enable option to sleep while Resting.");
             sleepingWhileRestingSeconds = BindConfig("Sleeping while resting", "Seconds to stay resting", defaultValue: 20, "How many seconds should pass while resting for sleep in front of fireplace to be available");
+
+            sleepHotkeyOverride = BindClientConfig("Hotkey - Sleep", "Override default hotkey", defaultValue: false, "Replace the default Sleep interaction hotkey with the configured hotkey.");
+            sleepHotkey = BindClientConfig("Hotkey - Sleep", "Hotkey", new KeyboardShortcut(KeyCode.E, KeyCode.LeftShift), "Hotkey used for Sleep when the default hotkey override is enabled.");
+
+            claimHotkeyOverride = BindClientConfig("Hotkey - Claim", "Override default hotkey", defaultValue: false, "Replace the default Claim interaction hotkey with the configured hotkey.");
+            claimHotkey = BindClientConfig("Hotkey - Claim", "Hotkey", new KeyboardShortcut(KeyCode.E), "Hotkey used for Claim when the default hotkey override is enabled.");
+
+            sleepHotkey.SettingChanged += (_, __) => SanitizeHotkey(sleepHotkey);
+            claimHotkey.SettingChanged += (_, __) => SanitizeHotkey(claimHotkey);
+
+            SanitizeHotkey(sleepHotkey);
+            SanitizeHotkey(claimHotkey);
+        }
+
+        private static void SanitizeHotkey(ConfigEntry<KeyboardShortcut> hotkeyConfig)
+        {
+            if (sanitizingHotkeys || hotkeyConfig == null)
+                return;
+
+            KeyboardShortcut original = hotkeyConfig.Value;
+            KeyboardShortcut sanitized = GetSanitizedHotkey(original);
+            if (original.Equals(sanitized))
+                return;
+
+            sanitizingHotkeys = true;
+            try
+            {
+                hotkeyConfig.Value = sanitized;
+                instance?.Logger.LogWarning($"Sanitized hotkey data on {hotkeyConfig.Definition}: {sanitized}.");
+            }
+            finally
+            {
+                sanitizingHotkeys = false;
+            }
+        }
+
+        private static KeyboardShortcut GetSanitizedHotkey(KeyboardShortcut shortcut)
+        {
+            List<KeyCode> keys = new List<KeyCode> { shortcut.MainKey };
+            keys.AddRange(shortcut.Modifiers);
+            keys = keys.Where(IsHotkeyKeyValid).Distinct().ToList();
+
+            KeyCode mainKey = keys.Contains(shortcut.MainKey) && !IsModifier(shortcut.MainKey)
+                ? shortcut.MainKey
+                : keys.FirstOrDefault(key => !IsModifier(key));
+
+            if (mainKey == KeyCode.None)
+                return KeyboardShortcut.Empty;
+
+            KeyCode[] modifiers = keys
+                .Where(key => key != mainKey && IsModifier(key))
+                .OrderBy(GetModifierSortOrder)
+                .ThenBy(key => (int)key)
+                .ToArray();
+
+            return new KeyboardShortcut(mainKey, modifiers);
+        }
+
+        private static bool IsHotkeyKeyValid(KeyCode key)
+        {
+            return key != KeyCode.None &&
+                   ZInput.IsKeyCodeValid(key) &&
+                   key != KeyCode.Mouse0 &&
+                   key != KeyCode.Mouse1;
+        }
+
+        private static bool IsModifier(KeyCode key)
+        {
+            return key == KeyCode.AltGr ||
+                   key == KeyCode.LeftAlt ||
+                   key == KeyCode.RightAlt ||
+                   key == KeyCode.LeftShift ||
+                   key == KeyCode.RightShift ||
+                   key == KeyCode.LeftControl ||
+                   key == KeyCode.RightControl ||
+                   key == KeyCode.LeftApple ||
+                   key == KeyCode.RightApple ||
+                   key == KeyCode.LeftCommand ||
+                   key == KeyCode.RightCommand ||
+                   key == KeyCode.LeftWindows ||
+                   key == KeyCode.RightWindows;
+        }
+
+        private static int GetModifierSortOrder(KeyCode key)
+        {
+            if (key == KeyCode.LeftControl || key == KeyCode.RightControl)
+                return 0;
+            if (key == KeyCode.LeftAlt || key == KeyCode.RightAlt || key == KeyCode.AltGr)
+                return 1;
+            if (key == KeyCode.LeftShift || key == KeyCode.RightShift)
+                return 2;
+            return 3;
+        }
+
+        private static string FormatHotkey(KeyboardShortcut shortcut)
+        {
+            if (shortcut.MainKey == KeyCode.None)
+                return "None";
+
+            IEnumerable<KeyCode> modifiers = shortcut.Modifiers
+                .Where(IsModifier)
+                .Distinct()
+                .OrderBy(GetModifierSortOrder)
+                .ThenBy(key => (int)key);
+
+            return string.Join(" + ", modifiers
+                .Select(GetKeyDisplayName)
+                .Concat(new[] { GetKeyDisplayName(shortcut.MainKey) }));
+        }
+
+        private static string GetKeyDisplayName(KeyCode key)
+        {
+            string displayName = ZInput.KeyCodeToDisplayName(key);
+            return string.IsNullOrEmpty(displayName) ? key.ToString() : displayName;
+        }
+
+        private static bool IsShortcutDown(KeyboardShortcut shortcut)
+        {
+            if (shortcut.MainKey == KeyCode.None || !ZInput.GetKeyDown(shortcut.MainKey))
+                return false;
+
+            foreach (KeyCode modifier in shortcut.Modifiers)
+            {
+                if (!ZInput.GetKey(modifier))
+                    return false;
+            }
+
+            return true;
+        }
+
+        private static string GetAlternativeUseHotkeyText()
+        {
+            string altKey = !ZInput.IsNonClassicFunctionality() || !ZInput.IsGamepadActive() ? "$KEY_AltPlace" : "$KEY_JoyAltKeys";
+            return Localization.instance.Localize($"{altKey} + $KEY_Use");
+        }
+
+        private static string GetSleepHotkeyText(bool defaultUsesAlternativeAction)
+        {
+            if (sleepHotkeyOverride.Value)
+                return FormatHotkey(sleepHotkey.Value);
+
+            return defaultUsesAlternativeAction
+                ? GetAlternativeUseHotkeyText()
+                : Localization.instance.Localize("$KEY_Use");
+        }
+
+        private static string GetClaimHotkeyText()
+        {
+            return claimHotkeyOverride.Value
+                ? FormatHotkey(claimHotkey.Value)
+                : Localization.instance.Localize("$KEY_Use");
+        }
+
+        private static string GetActionHoverLine(string hotkey, string action)
+        {
+            return Localization.instance.Localize($"[<color=yellow><b>{hotkey}</b></color>] {action}");
+        }
+
+        private static void CheckCustomHotkeys(Player player)
+        {
+            if (!modEnabled.Value || player == null || player != Player.m_localPlayer || Hud.InRadial())
+                return;
+
+            bool sleepPressed = sleepHotkeyOverride.Value && IsShortcutDown(sleepHotkey.Value);
+            bool claimPressed = claimHotkeyOverride.Value && IsShortcutDown(claimHotkey.Value);
+            if (!sleepPressed && !claimPressed)
+                return;
+
+            GameObject hoverObject = player.GetHoverObject();
+            if (hoverObject == null)
+                return;
+
+            Bed bed = hoverObject.GetComponentInParent<Bed>();
+            if (bed != null)
+            {
+                if (sleepPressed && CanUseBedSleepAction(bed))
+                {
+                    InvokeCustomInteraction(player, hoverObject, HotkeyAction.Sleep, alt: true);
+                    return;
+                }
+
+                if (claimPressed && CanUseBedClaimAction(bed))
+                    InvokeCustomInteraction(player, hoverObject, HotkeyAction.Claim, alt: false);
+
+                return;
+            }
+
+            if (sleepPressed && hoverObject.GetComponentInParent<Fireplace>() != null && CanSleep())
+                InvokeCustomInteraction(player, hoverObject, HotkeyAction.Sleep, alt: true);
+        }
+
+        private static void InvokeCustomInteraction(Player player, GameObject hoverObject, HotkeyAction action, bool alt)
+        {
+            activeHotkeyAction = action;
+            try
+            {
+                player.Interact(hoverObject, false, alt);
+            }
+            finally
+            {
+                activeHotkeyAction = HotkeyAction.None;
+            }
+        }
+
+        private static bool CanUseBedSleepAction(Bed bed)
+        {
+            if (bed == null)
+                return false;
+
+            return sleepingInNotOwnedBed.Value || bed.IsMine() && bed.IsCurrent();
+        }
+
+        private static bool IsBedUnclaimed(Bed bed)
+        {
+            return bed != null && string.IsNullOrEmpty(bed.GetOwnerName());
+        }
+
+        private static bool CanUseBedClaimAction(Bed bed)
+        {
+            return IsBedUnclaimed(bed);
+        }
+
+        private static bool ShouldSuppressNativeBedInteraction(Bed bed, bool repeat, bool alt)
+        {
+            if (!modEnabled.Value || bed == null || repeat || activeHotkeyAction != HotkeyAction.None)
+                return false;
+
+            if (sleepHotkeyOverride.Value && IsShortcutDown(sleepHotkey.Value) && CanUseBedSleepAction(bed))
+                return true;
+
+            if (claimHotkeyOverride.Value && IsShortcutDown(claimHotkey.Value) && CanUseBedClaimAction(bed))
+                return true;
+
+            bool isCurrentBed = bed.IsMine() && bed.IsCurrent();
+            if (sleepHotkeyOverride.Value && isCurrentBed)
+                return true;
+
+            if (sleepingInNotOwnedBed.Value && alt && !isCurrentBed && sleepHotkeyOverride.Value)
+                return true;
+
+            if (sleepingInNotOwnedBed.Value && !alt && bed.IsMine() && !bed.IsCurrent())
+                return true;
+
+            return !alt && claimHotkeyOverride.Value && CanUseBedClaimAction(bed);
         }
 
         private static bool CanSleep() => IsSleepingWhileRestingAvailable() && EnvMan.CanSleep() && !Player.m_localPlayer.GetSEMan().HaveStatusEffect(SEMan.s_statusEffectWet) && !Player.m_localPlayer.IsSensed();
@@ -433,8 +700,7 @@ namespace JustSleep
                 }
                 else
                 {
-                    string altKey = !ZInput.IsNonClassicFunctionality() || !ZInput.IsGamepadActive() ? "$KEY_AltPlace" : "$KEY_JoyAltKeys";
-                    __result += Localization.instance.Localize($"\n[<color=yellow><b>{altKey} + $KEY_Use</b></color>] $piece_bed_sleep");
+                    __result += "\n" + GetActionHoverLine(GetSleepHotkeyText(defaultUsesAlternativeAction: true), "$piece_bed_sleep");
 
                     if (__instance.IsBurning())
                         __result += $"\n{FromPercent(GetAutomaticSleepFocusProgress(__instance))}";
@@ -448,11 +714,63 @@ namespace JustSleep
             [HarmonyPriority(Priority.First)]
             private static bool Prefix(Humanoid user, bool hold, bool alt)
             {
-                if (!alt || hold || user != Player.m_localPlayer || !CanSleep())
+                if (hold || user != Player.m_localPlayer || !CanSleep())
                     return true;
 
-                SetSleepingWhileResting(sleeping:true);
+                if (activeHotkeyAction == HotkeyAction.Sleep)
+                {
+                    SetSleepingWhileResting(sleeping: true);
+                    return false;
+                }
+
+                if (sleepHotkeyOverride.Value && IsShortcutDown(sleepHotkey.Value))
+                    return false;
+
+                if (!alt)
+                    return true;
+
+                if (sleepHotkeyOverride.Value)
+                    return false;
+
+                SetSleepingWhileResting(sleeping: true);
                 return false;
+            }
+        }
+
+        [HarmonyPatch(typeof(Player), nameof(Player.Update))]
+        private static class Player_Update_CustomHotkeys
+        {
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+            {
+                List<CodeInstruction> codes = instructions.ToList();
+                MethodInfo inRadial = AccessTools.Method(typeof(Hud), nameof(Hud.InRadial));
+                MethodInfo getButtonUp = AccessTools.Method(typeof(ZInput), nameof(ZInput.GetButtonUp), new[] { typeof(string) });
+                MethodInfo checkCustomHotkeys = AccessTools.Method(typeof(JustSleep), nameof(CheckCustomHotkeys));
+
+                CodeMatcher matcher = new CodeMatcher(codes)
+                    .MatchForward(false,
+                        new CodeMatch(instruction => instruction.Calls(inRadial)),
+                        new CodeMatch(instruction => instruction.opcode.FlowControl == FlowControl.Cond_Branch),
+                        new CodeMatch(OpCodes.Ldstr, "JoyHide"),
+                        new CodeMatch(instruction => instruction.Calls(getButtonUp)));
+
+                if (!matcher.IsValid)
+                {
+                    instance?.Logger.LogError("Failed to inject custom bed hotkey handling into Player.Update.");
+                    return codes;
+                }
+
+                CodeInstruction loadPlayer = new CodeInstruction(OpCodes.Ldarg_0);
+                loadPlayer.labels.AddRange(matcher.Instruction.labels);
+                matcher.Instruction.labels.Clear();
+                loadPlayer.blocks.AddRange(matcher.Instruction.blocks);
+                matcher.Instruction.blocks.Clear();
+
+                matcher.Insert(
+                    loadPlayer,
+                    new CodeInstruction(OpCodes.Call, checkCustomHotkeys));
+
+                return matcher.InstructionEnumeration();
             }
         }
 
@@ -492,24 +810,54 @@ namespace JustSleep
                 if (!modEnabled.Value)
                     return;
 
+                bool unclaimed = IsBedUnclaimed(__instance);
+                bool isCurrentBed = !unclaimed && __instance.IsMine() && __instance.IsCurrent();
+
                 if (!sleepingInNotOwnedBed.Value)
-                    return;
-
-                if (__result.Contains(Localization.instance.Localize("$piece_bed_sleep")))
-                    return;
-
-                if (!__instance.IsMine() || !__instance.IsCurrent())
                 {
-                    string altKey = !ZInput.IsNonClassicFunctionality() || !ZInput.IsGamepadActive() ? "$KEY_AltPlace" : "$KEY_JoyAltKeys";
-                    __result += Localization.instance.Localize($"\n[<color=yellow><b>{altKey} + $KEY_Use</b></color>] $piece_bed_sleep");
+                    if (unclaimed && claimHotkeyOverride.Value)
+                    {
+                        __result = Localization.instance.Localize("$piece_bed_unclaimed") + "\n" +
+                                   GetActionHoverLine(GetClaimHotkeyText(), "$piece_bed_claim");
+                    }
+                    else if (isCurrentBed && sleepHotkeyOverride.Value)
+                    {
+                        __result = GetBedHeader(__instance) + "\n" +
+                                   GetActionHoverLine(GetSleepHotkeyText(defaultUsesAlternativeAction: false), "$piece_bed_sleep");
+                    }
+                    return;
                 }
+
+                List<string> actionLines = new List<string>
+                {
+                    GetActionHoverLine(GetSleepHotkeyText(defaultUsesAlternativeAction: !isCurrentBed), "$piece_bed_sleep")
+                };
+
+                if (unclaimed)
+                    actionLines.Add(GetActionHoverLine(GetClaimHotkeyText(), "$piece_bed_claim"));
+
+                __result = GetBedHeader(__instance) + "\n" + string.Join("\n", actionLines);
+            }
+
+            private static string GetBedHeader(Bed bed)
+            {
+                string ownerName = bed.GetOwnerName();
+                return ownerName == ""
+                    ? Localization.instance.Localize("$piece_bed_unclaimed")
+                    : Localization.instance.Localize(ownerName + "'s $piece_bed");
             }
 
             [HarmonyPrefix]
             [HarmonyPatch(nameof(Bed.Interact))]
-            public static void InteractPrefix(Bed __instance, bool alt)
+            public static bool InteractPrefix(Bed __instance, bool repeat, bool alt)
             {
+                alternativeInteractingBed = null;
+
+                if (ShouldSuppressNativeBedInteraction(__instance, repeat, alt))
+                    return false;
+
                 alternativeInteractingBed = modEnabled.Value && sleepingInNotOwnedBed.Value && alt ? __instance : null;
+                return true;
             }
 
             [HarmonyFinalizer]
