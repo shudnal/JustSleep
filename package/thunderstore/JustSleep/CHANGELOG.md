@@ -1,3 +1,6 @@
+# 1.0.10
+* unionized bed actions, order and hover texts
+
 # 1.0.9
 * both hotkeys made configurable
 

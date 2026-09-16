@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Text;
 using UnityEngine;
 
 namespace JustSleep
@@ -16,7 +17,7 @@ namespace JustSleep
     {
         public const string pluginID = "shudnal.JustSleep";
         public const string pluginName = "JustSleep";
-        public const string pluginVersion = "1.0.9";
+        public const string pluginVersion = "1.0.10";
 
         internal static readonly ConfigSync configSync = new ConfigSync(pluginID)
         {
@@ -49,6 +50,14 @@ namespace JustSleep
             None,
             Sleep,
             Claim
+        }
+
+        private enum BedAction
+        {
+            None,
+            Claim,
+            SetSpawn,
+            Sleep
         }
 
         private static HotkeyAction activeHotkeyAction;
@@ -343,13 +352,15 @@ namespace JustSleep
             Bed bed = hoverObject.GetComponentInParent<Bed>();
             if (bed != null)
             {
-                if (sleepPressed && CanUseBedSleepAction(bed))
+                GetBedActions(bed, out BedAction firstAction, out BedAction secondAction);
+
+                if (sleepPressed && HasBedAction(firstAction, secondAction, BedAction.Sleep))
                 {
                     InvokeCustomInteraction(player, hoverObject, HotkeyAction.Sleep, alt: true);
                     return;
                 }
 
-                if (claimPressed && CanUseBedClaimAction(bed))
+                if (claimPressed && HasBedClaimAction(firstAction, secondAction))
                     InvokeCustomInteraction(player, hoverObject, HotkeyAction.Claim, alt: false);
 
                 return;
@@ -372,22 +383,90 @@ namespace JustSleep
             }
         }
 
-        private static bool CanUseBedSleepAction(Bed bed)
-        {
-            if (bed == null)
-                return false;
-
-            return sleepingInNotOwnedBed.Value || bed.IsMine() && bed.IsCurrent();
-        }
-
         private static bool IsBedUnclaimed(Bed bed)
         {
             return bed != null && string.IsNullOrEmpty(bed.GetOwnerName());
         }
 
-        private static bool CanUseBedClaimAction(Bed bed)
+        private static void GetBedActions(Bed bed, out BedAction firstAction, out BedAction secondAction)
         {
-            return IsBedUnclaimed(bed);
+            firstAction = BedAction.None;
+            secondAction = BedAction.None;
+
+            if (bed == null)
+                return;
+
+            bool unclaimed = IsBedUnclaimed(bed);
+            bool isMine = !unclaimed && bed.IsMine();
+            bool isCurrent = isMine && bed.IsCurrent();
+
+            if (unclaimed)
+            {
+                firstAction = BedAction.Claim;
+                if (sleepingInNotOwnedBed.Value)
+                    secondAction = BedAction.Sleep;
+                return;
+            }
+
+            if (isMine && !isCurrent)
+            {
+                firstAction = BedAction.SetSpawn;
+                if (sleepingInNotOwnedBed.Value)
+                    secondAction = BedAction.Sleep;
+                return;
+            }
+
+            if (isCurrent || sleepingInNotOwnedBed.Value)
+                firstAction = BedAction.Sleep;
+        }
+
+        private static bool HasBedAction(BedAction firstAction, BedAction secondAction, BedAction action)
+        {
+            return firstAction == action || secondAction == action;
+        }
+
+        private static bool HasBedClaimAction(BedAction firstAction, BedAction secondAction)
+        {
+            return HasBedAction(firstAction, secondAction, BedAction.Claim) ||
+                   HasBedAction(firstAction, secondAction, BedAction.SetSpawn);
+        }
+
+        private static bool BedSleepUsesAlternativeAction(Bed bed)
+        {
+            return bed == null || !bed.IsMine() || !bed.IsCurrent();
+        }
+
+        private static string GetBedActionLocalization(BedAction action)
+        {
+            switch (action)
+            {
+                case BedAction.Claim:
+                    return "$piece_bed_claim";
+                case BedAction.SetSpawn:
+                    return "$piece_bed_setspawn";
+                case BedAction.Sleep:
+                    return "$piece_bed_sleep";
+                default:
+                    return string.Empty;
+            }
+        }
+
+        private static string GetBedActionHotkeyText(Bed bed, BedAction action)
+        {
+            return action == BedAction.Sleep
+                ? GetSleepHotkeyText(BedSleepUsesAlternativeAction(bed))
+                : GetClaimHotkeyText();
+        }
+
+        private static void AppendBedAction(StringBuilder builder, Bed bed, BedAction action)
+        {
+            if (action == BedAction.None)
+                return;
+
+            if (builder.Length > 0)
+                builder.Append('\n');
+
+            builder.Append(GetActionHoverLine(GetBedActionHotkeyText(bed, action), GetBedActionLocalization(action)));
         }
 
         private static bool ShouldSuppressNativeBedInteraction(Bed bed, bool repeat, bool alt)
@@ -395,23 +474,22 @@ namespace JustSleep
             if (!modEnabled.Value || bed == null || repeat || activeHotkeyAction != HotkeyAction.None)
                 return false;
 
-            if (sleepHotkeyOverride.Value && IsShortcutDown(sleepHotkey.Value) && CanUseBedSleepAction(bed))
+            GetBedActions(bed, out BedAction firstAction, out BedAction secondAction);
+            bool sleepAvailable = HasBedAction(firstAction, secondAction, BedAction.Sleep);
+            bool claimAvailable = HasBedClaimAction(firstAction, secondAction);
+
+            // A custom shortcut can overlap Use/AltPlace. Suppress the native interaction first
+            // so the configured action is the only one performed in this frame.
+            if (sleepAvailable && sleepHotkeyOverride.Value && IsShortcutDown(sleepHotkey.Value))
                 return true;
 
-            if (claimHotkeyOverride.Value && IsShortcutDown(claimHotkey.Value) && CanUseBedClaimAction(bed))
+            if (claimAvailable && claimHotkeyOverride.Value && IsShortcutDown(claimHotkey.Value))
                 return true;
 
-            bool isCurrentBed = bed.IsMine() && bed.IsCurrent();
-            if (sleepHotkeyOverride.Value && isCurrentBed)
+            if (sleepAvailable && sleepHotkeyOverride.Value && alt == BedSleepUsesAlternativeAction(bed))
                 return true;
 
-            if (sleepingInNotOwnedBed.Value && alt && !isCurrentBed && sleepHotkeyOverride.Value)
-                return true;
-
-            if (sleepingInNotOwnedBed.Value && !alt && bed.IsMine() && !bed.IsCurrent())
-                return true;
-
-            return !alt && claimHotkeyOverride.Value && CanUseBedClaimAction(bed);
+            return claimAvailable && claimHotkeyOverride.Value && !alt;
         }
 
         private static bool CanSleep() => IsSleepingWhileRestingAvailable() && EnvMan.CanSleep() && !Player.m_localPlayer.GetSEMan().HaveStatusEffect(SEMan.s_statusEffectWet) && !Player.m_localPlayer.IsSensed();
@@ -457,11 +535,6 @@ namespace JustSleep
         {
             automaticSleepFireplace = null;
             automaticSleepFocusTimer = 0f;
-        }
-
-        private static float GetAutomaticSleepFocusProgress(Fireplace fireplace)
-        {
-            return automaticSleepFireplace == fireplace ? Mathf.Clamp01(automaticSleepFocusTimer / automaticSleepFocusSeconds) : 0f;
         }
 
         private static void SetSleepingWhileResting(bool sleeping)
@@ -701,9 +774,6 @@ namespace JustSleep
                 else
                 {
                     __result += "\n" + GetActionHoverLine(GetSleepHotkeyText(defaultUsesAlternativeAction: true), "$piece_bed_sleep");
-
-                    if (__instance.IsBurning())
-                        __result += $"\n{FromPercent(GetAutomaticSleepFocusProgress(__instance))}";
                 }
             }
         }
@@ -801,6 +871,7 @@ namespace JustSleep
         [HarmonyPatch(typeof(Bed))]
         public static class BedPatches
         {
+            private static readonly StringBuilder sb = new StringBuilder();
             private static Bed alternativeInteractingBed;
 
             [HarmonyPostfix]
@@ -810,33 +881,14 @@ namespace JustSleep
                 if (!modEnabled.Value)
                     return;
 
-                bool unclaimed = IsBedUnclaimed(__instance);
-                bool isCurrentBed = !unclaimed && __instance.IsMine() && __instance.IsCurrent();
+                GetBedActions(__instance, out BedAction firstAction, out BedAction secondAction);
 
-                if (!sleepingInNotOwnedBed.Value)
-                {
-                    if (unclaimed && claimHotkeyOverride.Value)
-                    {
-                        __result = Localization.instance.Localize("$piece_bed_unclaimed") + "\n" +
-                                   GetActionHoverLine(GetClaimHotkeyText(), "$piece_bed_claim");
-                    }
-                    else if (isCurrentBed && sleepHotkeyOverride.Value)
-                    {
-                        __result = GetBedHeader(__instance) + "\n" +
-                                   GetActionHoverLine(GetSleepHotkeyText(defaultUsesAlternativeAction: false), "$piece_bed_sleep");
-                    }
-                    return;
-                }
+                sb.Clear();
+                sb.Append(GetBedHeader(__instance));
+                AppendBedAction(sb, __instance, firstAction);
+                AppendBedAction(sb, __instance, secondAction);
 
-                List<string> actionLines = new List<string>
-                {
-                    GetActionHoverLine(GetSleepHotkeyText(defaultUsesAlternativeAction: !isCurrentBed), "$piece_bed_sleep")
-                };
-
-                if (unclaimed)
-                    actionLines.Add(GetActionHoverLine(GetClaimHotkeyText(), "$piece_bed_claim"));
-
-                __result = GetBedHeader(__instance) + "\n" + string.Join("\n", actionLines);
+                __result = sb.ToString();
             }
 
             private static string GetBedHeader(Bed bed)
@@ -856,7 +908,9 @@ namespace JustSleep
                 if (ShouldSuppressNativeBedInteraction(__instance, repeat, alt))
                     return false;
 
-                alternativeInteractingBed = modEnabled.Value && sleepingInNotOwnedBed.Value && alt ? __instance : null;
+                GetBedActions(__instance, out BedAction firstAction, out BedAction secondAction);
+                bool sleepAvailable = HasBedAction(firstAction, secondAction, BedAction.Sleep);
+                alternativeInteractingBed = alt && sleepAvailable && BedSleepUsesAlternativeAction(__instance) ? __instance : null;
                 return true;
             }
 

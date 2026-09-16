@@ -12,9 +12,11 @@ After you have "Resting" buff for set configurable amount of time (default 20 se
 * you should not be wet
 * it should not be a daytime
 
-Uses current ingame hotkey for alternative action. 
+Uses the current in-game alternative action hotkey by default.
 
-For PC it's Left shift. Doesn't mess with bed or fireplace behavior. Doesn't show hotkey hint if you can sleep as usual.
+Optional client-side hotkey overrides are available for Sleep and Claim. Sleep override applies to beds and fireplace sleeping; Claim override applies to both claiming unclaimed beds and setting the spawn point on owned non-current beds. Custom shortcut hints are displayed with modifiers first and the main key last.
+
+Bed actions keep the vanilla/legacy order: unclaimed beds show Claim then Sleep, owned non-current beds show Set Spawn then Sleep, while foreign beds and the current owned bed show Sleep only when that action is available.
 
 ## Installation (manual)
 extract JustSleep.dll to your BepInEx\Plugins\ folder.
